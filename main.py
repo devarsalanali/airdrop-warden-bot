@@ -14,6 +14,7 @@ from telegram.ext import (
     CallbackContext,
     ContextTypes
 )
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from dotenv import load_dotenv
 
 # --- Configuration --- #
@@ -95,22 +96,40 @@ def get_airdrops():
     
     return airdrops[:10]  # Return top 10 results
 
-# --- Bot Commands --- #
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /start command"""
-    user_id = update.effective_user.id
-    cursor.execute("SELECT sub_end_date FROM users WHERE user_id = ?", (user_id,))
-    result = cursor.fetchone()
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
     
-    if result and datetime.strptime(result[0], '%Y-%m-%d') > datetime.now():
-        await update.message.reply_text(f"✅ Active until: {result[0]}\nUse /airdrops")
-    else:
-        await update.message.reply_text(
-            f"🔐 *AirdropWarden Bot*\n\n"
-            f"Pay *0.99 USDT* (TRC20) to:\n\n`{os.getenv('USDT_WALLET')}`\n\n"
-            "Then send your transaction hash here.",
+    if query.data == "copy_address":
+        await query.edit_message_text(
+            text=f"`{os.getenv('USDT_WALLET')}`\n\n"
+                 "✅ Address copied to clipboard!\n"
+                 "Paste it in your wallet to pay.",
             parse_mode="Markdown"
         )
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                "📋 Copy USDT Address", 
+                callback_data="copy_address"
+            ),
+            InlineKeyboardButton(
+                "💳 Pay Now", 
+                url=f"https://tronscan.org/#/send?to={os.getenv('USDT_WALLET')}&amount=0.99"
+            )
+        ]
+    ]
+    await update.message.reply_text(
+        "🔐 *Subscription Payment*\n\n"
+        "1. Send *0.99 USDT* (TRC20) to:\n"
+        f"`{os.getenv('USDT_WALLET')}`\n\n"
+        "2. Reply with your TX hash\n\n"
+        "👉 Use buttons below for quick payment:",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )        
 
 async def airdrops(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /airdrops command"""
@@ -186,6 +205,7 @@ def main():
         .build()
     
     # Command handlers
+    application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("airdrops", airdrops))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_payment))
